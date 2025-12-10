@@ -1,0 +1,68 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title GoFuture — Event-Driven Architecture (To-Be)
+
+Container(booking, "Booking Service")
+Container(driver, "Driver Service")
+Container(pricing, "Pricing Service")
+Container(payments, "Payments Service")
+Container(notification, "Notification Service")
+Container(analytics, "Analytics Service")
+Container(fraud, "Fraud Service")
+Container(geography, "Geography Service")
+Container(api_gateway, "API Gateway")
+
+Container(outbox, "Outbox Pattern", "Transactional Outbox")
+Container(kafka_exporter, "Export kafka", "Собирает и агрегирует данные и передает в Prometheus")
+Container(kafka_streams, "Kafka Streams Processor", "Kafka Streams", "Real-time обработка событий")
+Container(booking_outbox, "Booking Outbox", "Transactional Outbox")
+
+ContainerQueue(kafka, "Kafka Cluster", "Apache Kafka", "Топики:\n- booking.events (partition by region_id)\n- driver.location (partition by region_id)\n- pricing.events\n- payments.status\n- fraud.events\n- notification.events")
+ContainerQueue(dlt, "Dead Letter Topic", "Kafka Topic", "Сообщения, не прошедшие обработку")
+
+' === Мониторинг ===
+Container_Ext(monitoring, "Prometheus + Grafana", "Мониторинг")
+Container_Ext(kafka_exporter, "Kafka Exporter", "Prometheus Exporter", "Consumer lag, offsets, ISR, throughput")
+
+Rel(api_gateway, booking, "Создать поездку", "HTTP/gRPC")
+
+' === ПРОДЮСЕРЫ ===
+Rel(booking, kafka, "BookingCreated\nBookingCancelled\nTripStarted\nTripCompleted", "produce")
+Rel(driver, kafka, "UpdatedLocation\nDriverAssigned\nDriverArrived\nDriverRejected", "produce")
+
+Rel(booking, booking_outbox, "Пишет события")
+Rel(booking_outbox, kafka, "CDC → produce")
+Rel(kafka, dlt, "failure route")
+
+Rel(payments, kafka, "PaymentInitiated\nPaymentSucceeded\nPaymentFailed", "produce")
+
+Rel(kafka, payments, "BookingCreated списание средств", "consume")
+Rel(kafka, driver, "BookingCreated поиск водителя", "consume")
+Rel(kafka, fraud, "Проверка на мошенничество", "consume")
+Rel(kafka, analytics, "Запись в ClickHouse", "consume")
+Rel(kafka, pricing, "Стоимость улуги", "consume")
+Rel(kafka, notification, "Оповещение SMS/Push", "consume")
+Rel(kafka, geography, "Обновление карты", "consume")
+Rel(kafka, kafka_streams, "consume pricing.events")
+Rel(kafka, kafka_exporter, "Сбор метрик")
+
+Rel(kafka_exporter, monitoring, "Метрики Kafka")
+Rel(dlt, monitoring, "Количество сообщений, алерт при росте", "Prometheus Alert")
+
+Rel(kafka_streams, kafka, "produce DynamicPriceUpdated")
+
+Note right of kafka
+    Saga создания поездки (хореография):
+    1. BookingCreated
+    2. PaymentInitiated -> PaymentSucceeded
+    3. DriverAssignmentRequested -> DriverAssigned
+
+    Компенсация при ошибках:
+    • PaymentFailed -> CompensateBooking + Refund
+    • DriverNotFound -> CancelBooking + Refund
+end note
+
+
+
+@enduml
