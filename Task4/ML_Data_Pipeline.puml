@@ -1,0 +1,58 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title GoFuture — ML & Data Pipeline для динамического ценообразования и антифрода
+
+Person(mobile_apps, "Мобильные приложения", "iOS/Android")
+
+Container(api_gateway, "API Gateway", "Nginx / gRPC", "Маршрутизация запросов")
+Container(booking, "Booking Service", "Go", "Создание бронирований")
+Container(driver, "Driver Service", "Go", "Локации водителей")
+Container(pricing, "Pricing Service", "Go", "Расчёт стоимости")
+Container(payments, "Payments Service", "Go", "Платежи")
+Container(geography, "Geography Service", "Go", "Геозоны")
+Container(fraud, "Fraud Service", "Go", "Антифрод-правила")
+
+ContainerQueue(kafka, "Kafka Cluster", "Apache Kafka", "Топики:\n- booking.events (partition by region_id)\n- driver.location (partition by region_id)\n- pricing.events\n- payments.status\n- fraud.events\n- notification.events")
+
+Container(kafka_streams, "Kafka Streams Processor", "Kafka Streams", "Real-time обработка фичей")
+Container(feature_store_online, "Feature Store (Online)", "Redis", "Используется для ML Inference")
+Container(feature_store_offline, "Feature Store (Offline)", "ClickHouse", "Исторические фичи для обучения")
+
+Container(ml_inference, "ML Inference", "FastAPI + ONNX", "price_model, fraud_model, demand_model")
+
+Container(ml_training, "ML Training Pipeline", "Airflow + Spark", "Переобучение моделей: 1h/24h")
+
+Container_Ext(bi, "BI / Analytics", "ClickHouse + DataLens", "Глобальная аналитика")
+
+Container_Ext(monitoring, "Prometheus + Grafana", "Monitoring")
+
+' === Потоки ===
+Rel(mobile_apps, api_gateway, "Создать поездку", "HTTP")
+Rel(api_gateway, booking, "Создать поездку", "HTTP/gRPC")
+
+Rel(booking, kafka, "BookingCreated")
+Rel(driver, kafka, "DriverLocationUpdated")
+Rel(payments, kafka, "PaymentStatusChanged")
+Rel(geography, kafka, "ZoneEntered")
+
+
+Rel(kafka, kafka_streams, "consume events")
+Rel(kafka_streams, feature_store_online, "write real-time features")
+Rel(kafka_streams, feature_store_offline, "agg metrics -> batch store")
+
+Rel(feature_store_online, ml_inference, "read online features")
+Rel(ml_inference, pricing, "predict_price()")
+Rel(ml_inference, fraud, "predict_fraud_score()")
+
+Rel(feature_store_offline, ml_training, "read historical features")
+Rel(ml_training, ml_inference, "deploy new model")
+
+Rel(feature_store_offline, bi, "OLAP queries")
+Rel(kafka_streams, bi, "real-time metrics")
+
+Rel(kafka, monitoring, "export metrics")
+Rel(ml_inference, monitoring, "model latency / errors")
+Rel(kafka_streams, monitoring, "consumer lag")
+
+@enduml
