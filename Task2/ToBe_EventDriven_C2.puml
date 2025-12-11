@@ -32,7 +32,7 @@ Rel(booking, kafka, "BookingCreated\nBookingCancelled\nTripStarted\nTripComplete
 Rel(driver, kafka, "UpdatedLocation\nDriverAssigned\nDriverArrived\nDriverRejected", "produce")
 
 Rel(booking, booking_outbox, "Пишет события")
-Rel(booking_outbox, kafka, "CDC → produce")
+Rel(booking_outbox, kafka, "CDC -> produce")
 Rel(kafka, dlt, "failure route")
 
 Rel(payments, kafka, "PaymentInitiated\nPaymentSucceeded\nPaymentFailed", "produce")
@@ -59,8 +59,8 @@ Note right of kafka
     3. DriverAssignmentRequested -> DriverAssigned
 
     Компенсация при ошибках:
-    • PaymentFailed -> CompensateBooking + Refund
-    • DriverNotFound -> CancelBooking + Refund
+    - PaymentFailed -> CompensateBooking + Refund
+    - DriverNotFound -> CancelBooking + Refund
 end note
 
 

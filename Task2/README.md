@@ -107,8 +107,8 @@ notification.events
 5. Driver Service -> DriverAssigned
 
 **Компенсация:**
-- PaymentFailed → Refund + CancelBooking
-- DriverNotFound → Refund + CancelBooking
+- PaymentFailed -> Refund + CancelBooking
+- DriverNotFound -> Refund + CancelBooking
   
 Координация происходит через события.
 

@@ -1,0 +1,55 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title GoFuture — Event-Driven Architecture (To-Be)
+
+System_Boundary(platform, "GoFuture Multi-Tenant Platform") {
+    Container(sso, "IAM + SSO", "Keycloak")
+    Container(api_gateway, "API Gateway")
+    Container(onboarding, "Onboarding Service")
+    Container(tenant_service, "Tenant Management Service" , "CRUD тенантов")
+
+    Container(booking, "Booking Service", "tenant-aware")
+
+    ContainerQueue(kafka, "Kafka Cluster", "Apache Kafka", "Топики:\n- booking.events (partition by region_id)\n- driver.location (partition by region_id)\n- pricing.events\n- payments.status\n- fraud.events\n- notification.events")
+    ContainerQueue(dlt, "Dead Letter Topic", "Kafka Topic", "Сообщения, не прошедшие обработку")
+
+    ContainerDb(postgres, "PostgreSQL", "Схема на тенанта, tenant_*")
+    ContainerDb(redis, "In-memory кэш", "Redis", "Кэширование данных")
+}
+' === Мониторинг ===
+Container_Ext(monitoring, "Prometheus + Grafana", "Мониторинг")
+Container_Ext(kafka_exporter, "Kafka Exporter", "Prometheus Exporter", "Consumer lag, offsets, ISR, throughput")
+
+Person(partner_admin, "Админ партнёра", "Регистрируется и управляет своим тенантом")
+Person(super_admin, "Super Admin GoFuture")
+
+Rel(partner_admin, sso, "Login → JWT c tenant_id, role")
+Rel(super_admin, sso, "Login → JWT (role=super_admin)")
+Rel(sso, api_gateway, "Прокидывание JWT")
+Rel(onboarding, sso, "Создаёт клиент + роли")
+
+Rel(api_gateway, onboarding, "Запрос на партнерство")
+Rel(onboarding, tenant_service, "Создаёт запись tenant")
+
+Rel(tenant_service, postgres, "CREATE SCHEMA tenant_xxx")
+Rel(tenant_service, redis, "Выделение namespace (key prefix)")
+Rel(tenant_service, kafka, "Kafka Admin API -> создание tenant_xxx.* topics")
+Rel(kafka, dlt, "Ошибочные события → DLT")
+
+Rel(kafka, kafka_exporter, "Kafka metrics")
+Rel(kafka_exporter, monitoring, "scrape metrics")
+' Тест
+Rel(partner_admin, sso, "SSO → JWT с tenant_id")
+Rel(partner_admin, api_gateway, "Обычный запрос")
+Rel(api_gateway, booking, "X-Tenant-ID: abc123", "HTTP/gRPC")
+
+Note right of platform
+    Изоляция данных:
+    - PostgreSQL — schema per tenant
+    - Kafka — topic prefix tenant_id.
+    - Redis — key prefix tenant:{tenant_id}:
+    - Все сервисы читают tenant_id из контекста
+end note
+
+@enduml

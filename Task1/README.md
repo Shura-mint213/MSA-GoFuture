@@ -13,7 +13,7 @@
 
 ## Ключевые архитектурные решения
 - Применяется **Strangler Fig Pattern** через API Gateway и feature flags
-- Поэтапный переход к **Database per Service** (сначала Booking → Driver → Payments)
+- Поэтапный переход к **Database per Service** (сначала Booking -> Driver -> Payments)
 - Основной брокер — **RabbitMQ** (сохранён), спроектирован будущий переход на Kafka
 - Широко используется **Redis** для кэширования горячих данных (координаты, цены)
 - Все миграции — **zero-downtime** с возможностью мгновенного отката

@@ -47,7 +47,7 @@ Selective Replication по типам топиков:
 ### PostgreSQL — Amazon Aurora Global Database
 - **Выбор:** Amazon Aurora Global DB (primary в `eu-central-1`, вторичные реплики в `ap-southeast-1` и `sa-east-1`)
  **Причины:** низкая репликационная задержка, встроенные механизмы failover и ручное/автоматическое промоутирование региональных реплик.
-- **План failover:** promote regional secondary → переключение записи → синхронизация сервисов.
+- **План failover:** promote regional secondary -> переключение записи -> синхронизация сервисов.
 - 
 ### Redis / Caching
 - Per-region Redis (Amazon ElastiCache) — локальный hot-cache.
