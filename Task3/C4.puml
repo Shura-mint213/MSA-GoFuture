@@ -1,0 +1,89 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title GoFuture — Multi-Region Deployment & Failover (99.99 %)
+
+' Глобальная граница / регионы
+System_Boundary(global, "Global Deployment") {
+    Container_Boundary(region_eu, "eu-central-1 (Франкфурт)") {
+        Container(api_eu, "API Gateway + Services", "EKS / EC2", "Обработка EU/RU трафика")
+        ContainerDb(kafka_eu, "Kafka Cluster (eu)", "Kafka", "Regional event processing")
+        ContainerDb(aurora_primary, "Aurora Global DB (primary)", "Amazon Aurora", "Primary writer")
+        Container(redis_eu, "ElastiCache Redis (eu)", "Redis", "Local cache")
+    }
+
+    Container_Boundary(region_asia, "ap-southeast-1 (Сингапур)") {
+        Container(api_asia, "API Gateway + Services", "EKS / EC2", "Regional services")
+        ContainerDb(kafka_asia, "Kafka Cluster (asia)", "Kafka", "Regional event processing")
+        ContainerDb(aurora_replica_asia, "Aurora Replica (asia)", "Aurora Global", "Read replica / failover")
+        Container(redis_asia, "ElastiCache Redis (asia)", "Redis", "Local cache")
+    }
+
+    Container_Boundary(region_sa, "sa-east-1 (Бразилия)") {
+        Container(api_sa, "API Gateway + Services", "EKS / EC2", "Regional services")
+        ContainerDb(kafka_sa, "Kafka Cluster (sa)", "Kafka", "Regional event processing")
+        ContainerDb(aurora_replica_sa, "Aurora Replica (sa)", "Aurora Global", "Read replica / failover")
+        Container(redis_sa, "ElastiCache Redis (sa)", "Redis", "Local cache")
+    }
+}
+
+' Внешняя / инфраструктура
+Container_Ext(route53, "Route53 Geo DNS", "AWS Route53", "Geo DNS / Latency routing")
+Container_Ext(glb, "Global Accelerator / ALB", "AWS Global Accelerator + ALB", "Health-aware routing")
+Container_Ext(waf, "AWS WAF", "WAF", "Edge protection, rate limiting")
+Container_Ext(transit, "Transit Gateway / PrivateLink", "AWS Network", "Secure inter-region channels")
+
+Container_Ext(kafka_exporter, "Kafka Exporter / Metrics", "Prometheus Exporter")
+Container_Ext(prom, "Prometheus / CloudWatch", "Monitoring")
+Container_Ext(grafana, "Grafana", "Dashboards")
+
+Person(user, "Пользователь")
+
+' Маршрутизация
+Rel(user, route53, "DNS resolution (geo)")
+Rel(route53, glb, "Point to closest healthy region")
+Rel(glb, waf, "Route through WAF", "HTTPS")
+
+Rel(waf, api_eu, "Route to EU services", "HTTPS")
+Rel(waf, api_asia, "Route to Asia services", "HTTPS")
+Rel(waf, api_sa, "Route to SA services", "HTTPS")
+
+' Replication links
+Rel(kafka_eu, kafka_asia, "Cluster Linking / MirrorMaker2 (selective: fraud,billing,analytics)", "async")
+Rel(kafka_eu, kafka_sa, "Cluster Linking / MirrorMaker2 (selective: fraud,billing,analytics)", "async")
+
+' Aurora Global replication
+Rel(aurora_primary, aurora_replica_asia, "Aurora Global Replication (physical)", "async")
+Rel(aurora_primary, aurora_replica_sa, "Aurora Global Replication (physical)", "async")
+
+' Redis / cache sync
+Rel(redis_eu, redis_asia, "Cache invalidation / async sync (via Kafka events)", "async")
+Rel(redis_eu, redis_sa, "Cache invalidation / async sync (via Kafka events)", "async")
+
+' Network / secure links
+Rel(transit, kafka_eu, "Encrypted replication channel (TLS)")
+Rel(transit, kafka_asia, "Encrypted replication channel (TLS)")
+Rel(transit, kafka_sa, "Encrypted replication channel (TLS)")
+
+Rel(transit, aurora_primary, "Private replication / control")
+Rel(transit, aurora_replica_asia, "Private replication / control")
+Rel(transit, aurora_replica_sa, "Private replication / control")
+
+' Monitoring links
+Rel(kafka_eu, kafka_exporter, "Export metrics")
+Rel(kafka_asia, kafka_exporter, "Export metrics")
+Rel(kafka_sa, kafka_exporter, "Export metrics")
+Rel(kafka_exporter, prom, "Scrape metrics", "HTTP")
+Rel(prom, grafana, "Visualize / Dashboards", "HTTP")
+
+
+Note right of region_eu
+    Последовательность переключения на резервный сервер:
+    1) Проверка работоспособности GLB обнаруживает сбой в region_eu -> трафик перенаправляется в Сингапур
+    2) Повышение статуса реплики Postgres в Сингапур (Patroni / вручную)
+    3) Kafka Cluster Linking обеспечивает реплицированные события в Сингапур
+    4) Переключение Redis на реплику регионального кэша
+    5) Согласование через Outbox / DLT replay
+end note
+
+@enduml
